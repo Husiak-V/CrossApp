@@ -15,8 +15,8 @@
 * **IDE / Редактор:** Visual Studio Code (C# Dev Kit) / Visual Studio 2026
 
 ## Порівняння розмірів Self-Contained публікацій
-Публікація win-x64: src/Cli/bin/Release/net10.0/win-x64/publish/ = 76.66 МБ
-Публікація linux-x64: src/Cli/bin/Release/net10.0/linux-x64/publish/ = 78.79 МБ
+* Публікація win-x64: src/Cli/bin/Release/net10.0/win-x64/publish/ = 76.66 МБ
+* Публікація linux-x64: src/Cli/bin/Release/net10.0/linux-x64/publish/ = 78.79 МБ
 
 ## Інструкція запуску
 
