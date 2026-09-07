@@ -10,9 +10,13 @@
 
 ## Середовище розробки
 * **.NET SDK:** 10.0.x
-* **ОС:** Windows 11 x64 (або ваша актуальна ОС)
+* **ОС:** Windows 11 x64 
 * **RID розробника:** win-x64
 * **IDE / Редактор:** Visual Studio Code (C# Dev Kit) / Visual Studio 2026
+
+## Порівняння розмірів Self-Contained публікацій
+Публікація win-x64: src/Cli/bin/Release/net10.0/win-x64/publish/ = 76.66 МБ
+Публікація linux-x64: src/Cli/bin/Release/net10.0/linux-x64/publish/ = 78.79 МБ
 
 ## Інструкція запуску
 
