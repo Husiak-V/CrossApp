@@ -1,5 +1,23 @@
 # CrossApp — Наскрізний проєкт з крос-платформного програмування
 
+## Структура Solution
+```text
+CrossApp/
+├── CrossApp.sln
+├── README.md
+├── .gitignore
+└── src/
+    ├── Core/
+    │   ├── Core.csproj
+    │   ├── EnvironmentInfo.cs
+    │   ├── Dto/
+    │   ├── Domain/
+    │   └── Storage/
+    └── Cli/
+        ├── Cli.csproj
+        └── Program.cs
+```
+
 ## Предметна область: Замовлення (Orders)
 * **Призначення:** Оформлення замовлень покупців, розрахунок сум замовлень з урахуванням вартості позицій та управління статусами обробки.
 * **Сутності:**
@@ -8,19 +26,50 @@
   * `Order` — замовлення (дата, номер, зв'язок із клієнтом, статус виконання, підсумкова вартість);
   * `OrderLine` — рядок замовлення (посилання на товар, кількість, фіксована ціна на момент замовлення).
 
-## Середовище розробки
-* **.NET SDK:** 10.0.x
-* **ОС:** Windows 11 x64 
-* **RID розробника:** win-x64
-* **IDE / Редактор:** Visual Studio Code (C# Dev Kit) / Visual Studio 2026
+## Домовленість про каталоги в Core (на весь семестр)
+* `Core/Dto/` — record-типи формату даних.
+* `Core/Domain/` — сутності з поведінкою та інваріантами.
+* `Core/Storage/` — реалізації сховищ даних.
 
-## Порівняння розмірів Self-Contained публікацій
-* Публікація win-x64: src/Cli/bin/Release/net10.0/win-x64/publish/ = 76.66 МБ
-* Публікація linux-x64: src/Cli/bin/Release/net10.0/linux-x64/publish/ = 78.79 МБ
+## Команди для збірки, запуску та публікації
 
-## Інструкція запуску
-
-### Звичайний запуск
+### Збірка
 ```bash
 dotnet build
+```
+
+### Запуск CLI
+```bash
 dotnet run --project src/Cli
+```
+
+### Публікація
+1. **Self-contained:**
+   ```bash
+   dotnet publish src/Cli -c Release -r win-x64 --self-contained true -f net10.0 -o publish/self
+   ```
+2. **Framework-dependent:**
+   ```bash
+   dotnet publish src/Cli -c Release -r win-x64 --self-contained false -f net10.0 -o publish/fd
+   ```
+3. **Single-file (додаткове завдання 1):**
+   ```bash
+   dotnet publish src/Cli -c Release -r win-x64 --self-contained true -f net10.0 -p:PublishSingleFile=true -o publish/single
+   ```
+4. **Trimmed (додаткове завдання 2):**
+   ```bash
+   dotnet publish src/Cli -c Release -r win-x64 --self-contained true -f net10.0 -p:PublishTrimmed=true -o publish/trimmed
+   ```
+
+## Порівняння режимів публікації
+
+| RID          | Режим                       | Розмір publish               | Потрібен встановлений runtime? | Кількість файлів |
+|--------------|-----------------------------|------------------------------|--------------------------------|------------------|
+| win-x64      | self-contained              | ~76.68 МБ                    | ні                             | 194              |
+| win-x64      | framework-dependent         | ~0.19 МБ                     | так (.NET 10)                  | 7                |
+| win-x64      | self-contained (SingleFile) | ~70.15 МБ                    | ні                             | 3                |
+| win-x64      | self-contained (Trimmed)    | ~19.16 МБ                    | ні                             | 31               |
+
+### Різниця між self-contained та framework-dependent:
+* **Self-contained публікація** містить код застосунку, залежності та вбудовану копію .NET Runtime для конкретної платформи, тому не потребує встановленого .NET на цільовій машині, але має більший розмір.
+* **Framework-dependent публікація** містить лише зкомпільований код та залежності без середовища виконання, тому забезпечує мінімальний розмір, але вимагає наявності сумісного .NET Runtime на комп'ютері користувача.
