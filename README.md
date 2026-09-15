@@ -71,14 +71,6 @@ dotnet publish src/Cli -c Release -r win-x64 --self-contained true -f net10.0 -p
 .\publish\trimmed\Cli.exe
 ```
 
-###
-```bash
-```
-
-###
-```bash
-```
-
 ### Запуск CLI
 ```bash
 dotnet run --project src/Cli
