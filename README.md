@@ -37,6 +37,47 @@ CrossApp/
 ```bash
 dotnet build
 ```
+### Збірка окремо бібліотеки Core
+```bash
+dotnet build src/Core/Core.csproj
+```
+
+### Запуск застосунку через dotnet run
+```bash
+dotnet run --project src/Cli -f net10.0
+
+dotnet run --project src/Cli -f net8.0
+```
+
+### Публікація в різних режимах
+```bash
+Self-contained публікація:
+dotnet publish src/Cli -c Release -r win-x64 --self-contained true -f net10.0 -o publish/self
+
+Framework-dependent публікація:
+dotnet publish src/Cli -c Release -r win-x64 --self-contained false -f net10.0 -o publish/fd
+
+Single-file
+dotnet publish src/Cli -c Release -r win-x64 --self-contained true -f net10.0 -p:PublishSingleFile=true -o publish/single
+
+Trimmed
+dotnet publish src/Cli -c Release -r win-x64 --self-contained true -f net10.0 -p:PublishTrimmed=true -o publish/trimmed
+```
+### Запуск безпосередньо з каталогів publish
+```bash
+.\publish\self\Cli.exe
+.\publish\fd\Cli.exe
+.\publish\single\Cli.exe
+.\publish\trimmed\Cli.exe
+```
+
+###
+```bash
+```
+
+###
+```bash
+```
 
 ### Запуск CLI
 ```bash
