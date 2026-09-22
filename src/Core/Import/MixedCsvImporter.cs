@@ -11,7 +11,7 @@ public static class MixedCsvImporter
     public static MixedImportResult Load(string path)
     {
         var products = new List<ProductDto>();
-        var customers = new List<CustomerDto>();
+        var warehouses = new List<WarehouseDto>();
         var errors = new List<string>();
 
         string[] lines = File.ReadAllLines(path, Encoding.UTF8);
@@ -32,8 +32,8 @@ public static class MixedCsvImporter
                 case MixedOutcome.ProductOk p:
                     products.Add(p.Value);
                     break;
-                case MixedOutcome.CustomerOk c:
-                    customers.Add(c.Value);
+                case MixedOutcome.WarehouseOk w:
+                    warehouses.Add(w.Value);
                     break;
                 case MixedOutcome.Failed f:
                     errors.Add($"рядок {number}: {f.Reason}");
@@ -41,7 +41,7 @@ public static class MixedCsvImporter
             }
         }
 
-        return new MixedImportResult(products, customers, errors);
+        return new MixedImportResult(products, warehouses, errors);
     }
 
     private static MixedOutcome ParseLine(string line)
@@ -52,6 +52,7 @@ public static class MixedCsvImporter
         {
             { Length: < 2 } => new MixedOutcome.Failed("недостатньо колонок для визначення типу"),
 
+            // Товар: префікс "P"
             ["P", var id, var name, var priceStr, var unit]
                 when decimal.TryParse(priceStr, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal price) && price >= 0
                 => new MixedOutcome.ProductOk(new ProductDto(id, name, price, unit)),
@@ -62,14 +63,15 @@ public static class MixedCsvImporter
             ["P", ..]
                 => new MixedOutcome.Failed("помилка формату рядка товару (P)"),
 
-            ["C", var id, var name, var email] when email.Contains('@')
-                => new MixedOutcome.CustomerOk(new CustomerDto(id, name, email)),
+            // Склад: префікс "W"
+            ["W", var id, var name, var location] when !string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(location)
+                => new MixedOutcome.WarehouseOk(new WarehouseDto(id, name, location)),
 
-            ["C", _, _, var email] when !email.Contains('@')
-                => new MixedOutcome.Failed($"некоректний email клієнта: '{email}'"),
+            ["W", _, "", _] or ["W", _, _, ""]
+                => new MixedOutcome.Failed("назва складу або адреса порожні"),
 
-            ["C", ..]
-                => new MixedOutcome.Failed("помилка формату рядка клієнта (C)"),
+            ["W", ..]
+                => new MixedOutcome.Failed("помилка формату рядка складу (W)"),
 
             [var type, ..] => new MixedOutcome.Failed($"невідомий тип запису: '{type}'")
         };
@@ -78,7 +80,7 @@ public static class MixedCsvImporter
     private abstract record MixedOutcome
     {
         public sealed record ProductOk(ProductDto Value) : MixedOutcome;
-        public sealed record CustomerOk(CustomerDto Value) : MixedOutcome;
+        public sealed record WarehouseOk(WarehouseDto Value) : MixedOutcome;
         public sealed record Failed(string Reason) : MixedOutcome;
     }
 }

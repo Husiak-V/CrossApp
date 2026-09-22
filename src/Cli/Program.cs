@@ -32,4 +32,11 @@ if (result.Errors.Count > 0)
     }
 }
 
+// Додаткове завдання 3: Статистика імпорту одним рядком
+int total = result.Items.Count + result.Errors.Count;
+int accepted = result.Items.Count;
+int skipped = result.Errors.Count;
+double errorPercent = total > 0 ? (double)skipped / total * 100 : 0.0;
+Console.WriteLine($"\nСтатистика імпорту: Усього: {total} | Прийнято: {accepted} | Пропущено: {skipped} | Помилок: {errorPercent:F1}%");
+
 return 0;
