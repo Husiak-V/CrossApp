@@ -1,0 +1,7 @@
+type;id;name;extra1;extra2
+P;PRD-001;Клавіатура;1500.00;шт
+C;CST-001;Олександр Шевченко;alex@gmail.com
+P;PRD-002;;250.00;шт
+C;CST-002;Іван Петренко;invalid-email-address
+P;PRD-003;Миша бездротова;700.00;шт
+X;UNKNOWN-1;Невідомий об'єкт;0;0

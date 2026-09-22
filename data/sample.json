@@ -1,0 +1,23 @@
+[
+  {
+    "id": "PRD-J01",
+    "name": "SSD 1TB NVMe",
+    "price": 2800.00,
+    "unit": "шт",
+    "category": "Накопичувачі"
+  },
+  {
+    "id": "PRD-J02",
+    "name": "RAM 16GB DDR4",
+    "price": 1400.50,
+    "unit": "шт",
+    "category": "Пам'ять"
+  },
+  {
+    "id": "PRD-J03",
+    "name": "Wi-Fi Роутер AX3000",
+    "price": 2199.00,
+    "unit": "шт",
+    "category": "Мережа"
+  }
+]
