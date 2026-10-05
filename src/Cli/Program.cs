@@ -1,42 +1,31 @@
-﻿using Core.Dto;
+﻿using Core.Domain;
+using Core.Dto;
 using Core.Import;
 
-string path = args.Length > 0 ? args[0] : Path.Combine("data", "sample.csv");
+Console.WriteLine("=== Сценарій 1: успіх ===");
+Product product = Product.Create("P-001", "sku-001", "Цемент М400 25кг", "шт", 150.0m, "Будматеріали", 100);
+Console.WriteLine(product);
+product.RegisterArrival(50);
+product.Issue(30);
+Console.WriteLine(product);
+Console.WriteLine();
 
-if (!File.Exists(path))
+Console.WriteLine("=== Сценарій 2: порушення інваріантів ===");
+TryDo("видача більша за залишок", () => product.Issue(1000));
+TryDo("порожній SKU", () => Product.Create("P-002", " ", "Пісок", "т", 50.0m, "Сипучі", 10));
+TryDo("від'ємний залишок", () => Product.Create("P-003", "SKU-003", "Цегла", "шт", 10.0m, "Будматеріали", -5));
+
+static void TryDo(string title, Action action)
 {
-    Console.WriteLine($"Файл не знайдено: {Path.GetFullPath(path)}");
-    return 1;
-}
-
-string extension = Path.GetExtension(path).ToLowerInvariant();
-
-ImportResult<ProductDto> result = extension switch
-{
-    ".json" => ProductJsonImporter.Load(path),
-    _ => ProductCsvImporter.Load(path)
-};
-
-Console.WriteLine($"Завантажено записів: {result.Items.Count}");
-foreach (ProductDto p in result.Items.Take(5))
-{
-    Console.WriteLine($"  {p.Id,-9} {p.Name,-26} {p.Price,8:F2} грн  {p.Unit,-4} {(p.Category != null ? p.Category : string.Empty)}");
-}
-
-if (result.Errors.Count > 0)
-{
-    Console.WriteLine($"Пропущено рядків: {result.Errors.Count}");
-    foreach (string e in result.Errors)
+    try
     {
-        Console.WriteLine($"  ! {e}");
+        action();
+        Console.WriteLine($"  {title}: виняток НЕ спрацював — інваріант відсутній!");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"  {title}: {ex.GetType().Name} — {ex.Message}");
     }
 }
-
-// Додаткове завдання 3: Статистика імпорту одним рядком
-int total = result.Items.Count + result.Errors.Count;
-int accepted = result.Items.Count;
-int skipped = result.Errors.Count;
-double errorPercent = total > 0 ? (double)skipped / total * 100 : 0.0;
-Console.WriteLine($"\nСтатистика імпорту: Усього: {total} | Прийнято: {accepted} | Пропущено: {skipped} | Помилок: {errorPercent:F1}%");
 
 return 0;
