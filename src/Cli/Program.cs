@@ -1,19 +1,29 @@
 ﻿using Core.Domain;
-using Core.Dto;
-using Core.Import;
 
-Console.WriteLine("=== Сценарій 1: успіх ===");
-Product product = Product.Create("P-001", "sku-001", "Цемент М400 25кг", "шт", 150.0m, "Будматеріали", 100);
-Console.WriteLine(product);
-product.RegisterArrival(50);
-product.Issue(30);
-Console.WriteLine(product);
+Console.WriteLine("=== Сценарій 1: успішне створення замовлення та додавання позицій ===");
+Order order = Order.Create("ORD-001", "CUST-001");
+Console.WriteLine(order);
+
+order.AddLine("PRD-01", "Цемент М400", 150.0m, 2);
+order.AddLine("PRD-02", "Пісок будівельний", 50.0m, 5);
+Console.WriteLine(order);
+foreach (var line in order.Lines)
+{
+    Console.WriteLine($"  - {line}");
+}
+
+order.Confirm();
+Console.WriteLine(order);
 Console.WriteLine();
 
 Console.WriteLine("=== Сценарій 2: порушення інваріантів ===");
-TryDo("видача більша за залишок", () => product.Issue(1000));
-TryDo("порожній SKU", () => Product.Create("P-002", " ", "Пісок", "т", 50.0m, "Сипучі", 10));
-TryDo("від'ємний залишок", () => Product.Create("P-003", "SKU-003", "Цегла", "шт", 10.0m, "Будматеріали", -5));
+TryDo("додавання рядка до підтвердженого замовлення", () => order.AddLine("PRD-03", "Цегла", 10.0m, 10));
+
+Order emptyOrder = Order.Create("ORD-002", "CUST-002");
+TryDo("підтвердження порожнього замовлення", () => emptyOrder.Confirm());
+
+TryDo("некоректна кількість у рядку", () => order.AddLine("PRD-04", "Цвяхи", 5.0m, 0));
+TryDo("порожній ID замовлення", () => Order.Create(" ", "CUST-003"));
 
 static void TryDo(string title, Action action)
 {
