@@ -1,3 +1,5 @@
+using Core.Dto;
+
 namespace Core.Domain;
 
 public sealed class Order
@@ -7,13 +9,16 @@ public sealed class Order
     public string Id { get; }
     public string CustomerId { get; }
     public IReadOnlyList<OrderLine> Lines => _lines.AsReadOnly();
-    public bool IsConfirmed { get; private set; }
+    public OrderStatus Status { get; private set; } = OrderStatus.Draft;
+
+    public bool IsConfirmed => Status == OrderStatus.Confirmed;
     public decimal Total => _lines.Sum(l => l.Price * l.Quantity);
 
-    private Order(string id, string customerId)
+    private Order(string id, string customerId, OrderStatus status)
     {
         Id = id;
         CustomerId = customerId;
+        Status = status;
     }
 
     public static Order Create(string id, string customerId)
@@ -23,34 +28,71 @@ public sealed class Order
         if (string.IsNullOrWhiteSpace(customerId))
             throw new ArgumentException("Ідентифікатор клієнта обов'язковий", nameof(customerId));
 
-        return new Order(id.Trim(), customerId.Trim());
+        return new Order(id.Trim(), customerId.Trim(), OrderStatus.Draft);
     }
 
     public void AddLine(string productId, string name, decimal price, int quantity)
     {
-        if (IsConfirmed)
-            throw new InvalidOperationException($"Замовлення {Id} вже підтверджене, рядки додавати не можна");
-        if (string.IsNullOrWhiteSpace(productId))
-            throw new ArgumentException("Ідентифікатор товару обов'язковий", nameof(productId));
-        if (string.IsNullOrWhiteSpace(name))
-            throw new ArgumentException("Назва товару не може бути порожньою", nameof(name));
-        if (price < 0)
-            throw new ArgumentOutOfRangeException(nameof(price), price, "Ціна не може бути від'ємною");
-        if (quantity <= 0)
-            throw new ArgumentOutOfRangeException(nameof(quantity), quantity, "Кількість у рядку має бути більшою за нуль");
+        if (Status != OrderStatus.Draft)
+            throw new InvalidOperationException(
+                $"Замовлення {Id} у статусі {Status}, рядки можна додавати лише в чернетці");
 
-        _lines.Add(new OrderLine(productId.Trim(), name.Trim(), price, quantity));
+        // Перевірки ціни/кількості/назви — всередині OrderLine.Create.
+        _lines.Add(OrderLine.Create(productId, name, price, quantity));
     }
 
     public void Confirm()
     {
-        if (IsConfirmed)
-            throw new InvalidOperationException($"Замовлення {Id} вже підтверджене");
         if (_lines.Count == 0)
             throw new InvalidOperationException($"Не можна підтвердити порожнє замовлення {Id}");
 
-        IsConfirmed = true;
+        TransitionTo(OrderStatus.Confirmed);
     }
 
-    public override string ToString() => $"Замовлення {Id} (Клієнт: {CustomerId}) — Позицій: {_lines.Count}, Сума: {Total:F2} грн, Статус: {(IsConfirmed ? "Підтверджено" : "Чернетка")}";
+    public void Cancel()
+    {
+        TransitionTo(OrderStatus.Cancelled);
+    }
+
+    private void TransitionTo(OrderStatus target)
+    {
+        bool allowed = (Status, target) switch
+        {
+            (OrderStatus.Draft, OrderStatus.Confirmed) => true,
+            (OrderStatus.Draft, OrderStatus.Cancelled) => true,
+            (OrderStatus.Confirmed, OrderStatus.Cancelled) => true,
+            _ => false
+        };
+
+        if (!allowed)
+            throw new InvalidOperationException(
+                $"Замовлення {Id}: перехід зі статусу {Status} у {target} заборонено");
+
+        Status = target;
+    }
+
+    public OrderDto ToDto() =>
+        new(Id, CustomerId, Status.ToString(), _lines.Select(l => l.ToDto()).ToList());
+
+    public static Order FromDto(OrderDto dto)
+    {
+        ArgumentNullException.ThrowIfNull(dto);
+
+        Order order = Create(dto.Id, dto.CustomerId);
+
+        foreach (OrderLineDto line in dto.Lines ?? [])
+            order._lines.Add(OrderLine.FromDto(line)); // ті самі перевірки, що й Create
+
+        if (Enum.TryParse<OrderStatus>(dto.Status, out OrderStatus status) && status != OrderStatus.Draft)
+        {
+            if (status == OrderStatus.Confirmed)
+                order.Confirm(); // кине InvalidOperationException для порожнього
+            else
+                order.TransitionTo(status);
+        }
+
+        return order;
+    }
+
+    public override string ToString() => $"Замовлення {Id} (Клієнт: {CustomerId}) — Позицій: {_lines.Count}, Сума: {Total:F2} грн, Статус: {Status}";
 }
