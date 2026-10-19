@@ -1,87 +1,70 @@
-﻿using Core.Domain;
-using Core.Dto;
+﻿using Core;
+using Core.Abstractions;
+using Core.Domain;
+using Core.Services;
+using Core.Storage;
 
-Console.WriteLine("=== Сценарій 1: успішне створення замовлення та додавання позицій ===");
-Order order = Order.Create("ORD-001", "CUST-001");
-Console.WriteLine(order);
+bool useFile = args.Contains("--file");
+bool useFactory = args.Contains("--factory");
+bool useCache = args.Contains("--cache");
+string dataPath = Path.Combine(AppContext.BaseDirectory, "data", "orders.json");
 
+IOrderStore store = useFactory
+    ? StoreFactory.Create(args)
+    : useFile
+        ? new FileOrderStore(dataPath)
+        : new InMemoryOrderStore(SampleData.Orders());
 
-order.AddLine("PRD-01", "Цемент М400", 150.0m, 2);
-order.AddLine("PRD-02", "Пісок будівельний", 50.0m, 5);
-Console.WriteLine(order);
-foreach (var line in order.Lines)
-{
-    Console.WriteLine($"  - {line}");
-}
+if (useCache)
+    store = new CachingOrderStore(store);
 
-order.Confirm();
-Console.WriteLine(order);
-Console.WriteLine($"Стан після всіх відмов лишається: {order}");
+var service = new OrderService(store);
+Console.WriteLine($"Сховище: {store.GetType().Name}");
 Console.WriteLine();
 
-OrderDto dto = order.ToDto();
-Order restored = Order.FromDto(dto);
-Console.WriteLine($"ToDto/FromDto: {restored}");
+Console.WriteLine("=== Сценарій: створення, зміна, список, пошук ===");
+Order created = service.CreateOrder("CUST-100");
+Console.WriteLine($"Створено: {created}");
+
+service.AddLine(created.Id, "PRD-01", "Цемент М400", 150.0m, 2);
+service.AddLine(created.Id, "PRD-02", "Пісок будівельний", 50.0m, 5);
+service.Confirm(created.Id);
+Console.WriteLine($"Після змін: {service.Find(created.Id)}");
+
+Order? found = service.Find(created.Id);
+Console.WriteLine($"Пошук за id '{created.Id}':");
+foreach (OrderLine line in found!.Lines)
+    Console.WriteLine($"    {line}");
+
+Console.WriteLine();
+Console.WriteLine($"Усього замовлень у сховищі: {service.All().Count}");
+foreach (Order order in service.All())
+    Console.WriteLine($"  {order}");
+
+Console.WriteLine();
+Console.WriteLine("=== Додаткове 2: пошук за предикатом Func<Order, bool> ===");
+Console.WriteLine($"Підтверджених: {service.Find(o => o.Status == OrderStatus.Confirmed).Count}");
+Console.WriteLine($"Із сумою понад 300 грн: {service.Find(o => o.Total > 300m).Count}");
 Console.WriteLine();
 
-Console.WriteLine("=== Сценарій 2: порушення інваріантів ===");
-TryDo("додавання рядка до підтвердженого замовлення", () => order.AddLine("PRD-03", "Цегла", 10.0m, 10));
+service.Cancel(created.Id);
+Console.WriteLine($"Демонстраційне замовлення скасовано: {service.Find(created.Id)}");
+Console.WriteLine();
 
-Order emptyOrder = Order.Create("ORD-002", "CUST-002");
-TryDo("підтвердження порожнього замовлення", () => emptyOrder.Confirm());
-
-Order draft = Order.Create("ORD-003", "CUST-003");
-TryDo("некоректна кількість у рядку", () => draft.AddLine("PRD-04", "Цвяхи", 5.0m, 0));
-TryDo("від'ємна ціна у рядку", () => draft.AddLine("PRD-04", "Цвяхи", -5.0m, 1));
-TryDo("порожній ID замовлення", () => Order.Create(" ", "CUST-003"));
-TryDo("скасування вже скасованого", () =>
+Console.WriteLine("=== Сценарій відмови ===");
+TryDo("дубль id", () =>
 {
-    draft.Cancel();
-    draft.Cancel();
+    service.CreateOrder("CUST-200", "DUP-001");
+    service.CreateOrder("CUST-200", "DUP-001");
 });
-Console.WriteLine();
-
-Console.WriteLine("=== Додаткове 1: ImportResult -> сутності + помилки інваріантів ===");
-var import = new ImportResult<OrderLineDto>(
-    [
-        new OrderLineDto("PRD-10", "Цемент", 100.0m, 2),
-        new OrderLineDto("PRD-11", "Пісок", 20.0m, 0), 
-        new OrderLineDto(" ", "Без ID", 10.0m, 1),     
-    ],
-    ["рядок 7: ціна 'abc' не є коректним числом"]);
-ImportResult<OrderLine> converted = OrderImport.ToEntities(import);
-Console.WriteLine($"Валідних сутностей: {converted.Items.Count}, помилок: {converted.Errors.Count}");
-foreach (string err in converted.Errors)
-    Console.WriteLine($"  - {err}");
-Console.WriteLine();
-
-Console.WriteLine("=== Додаткове 2: правило двох сутностей (ліміт 5 відкритих замовлень) ===");
-var existing = new List<Order>();
-for (int i = 1; i <= 5; i++)
-{
-    Order o = Order.Create($"ORD-10{i}", "CUST-007");
-    o.AddLine("PRD-01", "Цемент", 10.0m, 1);
-    o.Confirm();
-    existing.Add(o);
-}
-TryDo("6-те відкрите замовлення клієнта", () => OrderPolicy.EnsureCanCreateOrder(existing, "CUST-007"));
-Console.WriteLine("Пояснення: правило потребує доступу до сховища всіх замовлень, тому живе в сервісі (тиждень 5), а не в сутності.");
-Console.WriteLine();
-
-Console.WriteLine("=== Додаткове 3: enum OrderStatus + switch-переходи ===");
-Order cancellable = Order.Create("ORD-020", "CUST-020");
-cancellable.AddLine("PRD-01", "Цемент", 10.0m, 1);
-cancellable.Confirm();
-cancellable.Cancel();
-Console.WriteLine($"Confirm -> Cancel: {cancellable.Status}");
-TryDo("перехід Cancelled -> Confirmed", () => cancellable.Confirm());
+TryDo("операція з неіснуючим id", () => service.Confirm("NOPE-999"));
 
 static void TryDo(string title, Action action)
 {
     try
     {
         action();
-        Console.WriteLine($"  {title}: виняток НЕ спрацював — інваріант відсутній!");
+        Console.WriteLine($"  {title}: виняток НЕ спрацював — перевірки відсутні!");
     }
     catch (Exception ex)
     {

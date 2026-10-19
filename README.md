@@ -3,19 +3,32 @@
 ## Структура Solution
 ```text
 CrossApp/
-├── CrossApp.sln
+├── CrossApp.slnx
 ├── README.md
 ├── .gitignore
+├── data/                          # sample.csv, sample.json, mixed.csv (імпортери)
 └── src/
     ├── Core/
     │   ├── Core.csproj
     │   ├── EnvironmentInfo.cs
-    │   ├── Dto/
+    │   ├── SampleData.cs          # 18 демонстраційних замовлень
+    │   ├── Abstractions/
+    │   │   └── IOrderStore.cs     # контракт сховища
     │   ├── Domain/
+    │   │   ├── Order.cs, OrderLine.cs, OrderStatus.cs
+    │   │   └── OrderImport.cs, OrderPolicy.cs
+    │   ├── Dto/
+    │   ├── Import/
+    │   ├── Services/
+    │   │   └── OrderService.cs    # бізнес-операції
     │   └── Storage/
+    │       ├── InMemoryOrderStore.cs
+    │       ├── FileOrderStore.cs
+    │       └── CachingOrderStore.cs   # декоратор (дод. 1)
     └── Cli/
         ├── Cli.csproj
-        └── Program.cs
+        ├── Program.cs             # composition root + сценарій
+        └── StoreFactory.cs        # фабрика (дод. 3)
 ```
 
 ## Предметна область: Замовлення (Orders)
@@ -106,6 +119,61 @@ dotnet run --project src/Cli
 ### Різниця між self-contained та framework-dependent:
 * **Self-contained публікація** містить код застосунку, залежності та вбудовану копію .NET Runtime для конкретної платформи, тому не потребує встановленого .NET на цільовій машині, але має більший розмір.
 * **Framework-dependent публікація** містить лише зкомпільований код та залежності без середовища виконання, тому забезпечує мінімальний розмір, але вимагає наявності сумісного .NET Runtime на комп'ютері користувача.
+
+## Лабораторна 5: сервісний шар (інтерфейс, два сховища, ручний DI)
+
+### Абстракція та сервіс
+* **Інтерфейс:** `Core.Abstractions.IOrderStore` — `List()`, `GetById()` (`Order?`), `Add()`, `Update()`, `Remove()`.
+* **Сервіс:** `Core.Services.OrderService` — залежить лише від `IOrderStore`, який передається через конструктор.
+* **Операції:** `CreateOrder`, `AddLine`, `Confirm`, `Cancel`, `Remove`, `All`, `Find(string)`, `Find(Func<Order, bool>)` (дод. 2).
+* `CreateOrder` застосовує `OrderPolicy` (не більше 5 відкритих замовлень на клієнта).
+
+### Реалізації сховища
+| Клас | Механіка |
+|---|---|
+| `InMemoryOrderStore` | `Dictionary` у пам'яті, початкові дані через конструктор (`SampleData.Orders()`), зникають після виходу |
+| `FileOrderStore` | кеш у пам'яті + `EnsureLoaded` при першому зверненні + `Flush` у файл після кожної зміни |
+| `CachingOrderStore` (дод. 1) | декоратор: приймає інший `IOrderStore`, додає кешування, контракт не змінюється |
+
+На диск записується `List<OrderDto>` (JSON), а мапінг виконують `Order.ToDto` / `Order.FromDto`: формат файлу не диктує форму домену. Шлях будується від `AppContext.BaseDirectory`, тому файл з'являється в каталозі збірки (`src/Cli/bin/<Configuration>/net10.0/data/orders.json`).
+
+### Схема залежностей
+```text
+Cli (Program.cs) → OrderService → IOrderStore → InMemoryOrderStore
+                                               FileOrderStore
+                                               CachingOrderStore(inner)
+```
+
+### Composition root (Program.cs)
+```csharp
+IOrderStore store = useFactory
+    ? StoreFactory.Create(args)
+    : useFile
+        ? new FileOrderStore(dataPath)
+        : new InMemoryOrderStore(SampleData.Orders());
+
+if (useCache) store = new CachingOrderStore(store);
+var service = new OrderService(store);
+```
+
+Конкретні класи створюються лише в точці входу; `OrderService` не містить слів `File` чи `Console`.
+
+### Запуск режимів
+```bash
+dotnet run --project src/Cli -f net10.0                  # InMemoryOrderStore, дані зникають після виходу
+dotnet run --project src/Cli -f net10.0 -- --file        # FileOrderStore, накопичення в data/orders.json
+dotnet run --project src/Cli -f net10.0 -- --file --cache  # FileOrderStore у декораторі CachingOrderStore
+dotnet run --project src/Cli -f net10.0 -- --file --factory # вибір сховища через StoreFactory
+```
+
+### Додаткові завдання
+1. **`CachingOrderStore`** — декоратор навколо будь-якого `IOrderStore`; кешує `List`/`GetById`, синхронізує кеш в `Add`/`Update`/`Remove`.
+2. **`OrderService.Find(Func<Order, bool>)`** — пошук за предикатом (підготовка до LINQ, тижні 6–7).
+3. **`StoreFactory.Create(args)`** — винесення вибору реалізації в окремий клас. Порівняння: фабрика скорочує `Program.cs`, але ховає wiring; ручний тернарний вибір у composition root робить зв'язки явними й для застосунку такого розміру є достатнім. Обидва варіанти доступні (`--factory`).
+
+**Тиждень 11 (БД):** достатньо додати `EfOrderStore : IOrderStore` і змінити один рядок у `Program.cs` — `OrderService` та домен не змінюються.
+
+**Коміт:** `lab05`.
 
 ## Інваріанти доменної моделі (Замовлення)
 * **Непорожні ідентифікатори:** ідентифікатор замовлення та клієнта не можуть бути порожніми (`ArgumentException`).
