@@ -4,7 +4,8 @@ namespace Core.Domain;
 
 public static class OrderImport
 {
-    public static ImportResult<OrderLine> ToEntities(ImportResult<OrderLineDto> import)
+    public static ImportResult<OrderLine> ToEntities(
+        ImportResult<OrderLineDto> import, Action<string>? onSkipped = null)
     {
         ArgumentNullException.ThrowIfNull(import);
 
@@ -20,7 +21,9 @@ public static class OrderImport
             }
             catch (Exception ex) when (ex is ArgumentException or ArgumentOutOfRangeException)
             {
-                errors.Add($"рядок даних {i + 1} (товар '{dto?.ProductId}'): {ex.Message}");
+                string error = $"рядок даних {i + 1} (товар '{dto?.ProductId}'): {ex.Message}";
+                errors.Add(error);
+                onSkipped?.Invoke(error);
             }
         }
 
@@ -28,10 +31,11 @@ public static class OrderImport
     }
 
     public static (Order Order, IReadOnlyList<string> Errors) DraftFromImport(
-        string orderId, string customerId, ImportResult<OrderLineDto> import)
+        string orderId, string customerId, ImportResult<OrderLineDto> import,
+        Action<string>? onSkipped = null)
     {
         Order order = Order.Create(orderId, customerId);
-        ImportResult<OrderLine> lines = ToEntities(import);
+        ImportResult<OrderLine> lines = ToEntities(import, onSkipped);
 
         var errors = new List<string>(lines.Errors);
         foreach (OrderLine line in lines.Items)

@@ -8,7 +8,7 @@ public static class MixedCsvImporter
 {
     private const char Separator = ';';
 
-    public static MixedImportResult Load(string path)
+    public static MixedImportResult Load(string path, Action<string>? onSkipped = null)
     {
         var products = new List<ProductDto>();
         var warehouses = new List<WarehouseDto>();
@@ -36,7 +36,9 @@ public static class MixedCsvImporter
                     warehouses.Add(w.Value);
                     break;
                 case MixedOutcome.Failed f:
-                    errors.Add($"рядок {number}: {f.Reason}");
+                    string error = $"рядок {number}: {f.Reason}";
+                    errors.Add(error);
+                    onSkipped?.Invoke(error);
                     break;
             }
         }

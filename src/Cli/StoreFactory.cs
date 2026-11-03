@@ -6,7 +6,7 @@ internal static class StoreFactory
 {
     public static IOrderStore Create(string[] args)
     {
-        string dataPath = Path.Combine(AppContext.BaseDirectory, "data", "orders.json");
+        string dataPath = DataPaths.OrdersFile();
         return (args ?? []).Contains("--file")
             ? new FileOrderStore(dataPath)
             : new InMemoryOrderStore(SampleData.Orders());
