@@ -12,7 +12,7 @@ CrossApp/
     ├── Core/
     │   ├── Core.csproj
     │   ├── EnvironmentInfo.cs
-    │   ├── SampleData.cs          # 18 демонстраційних замовлень
+    │   ├── SampleData.cs          # 20 демонстраційних замовлень
     │   ├── Abstractions/
     │   │   └── IOrderStore.cs     # контракт сховища
     │   ├── Domain/
@@ -25,6 +25,10 @@ CrossApp/
     │   ├── Import/
     │   ├── Notifications/         # lab06 (дод. 1): порт INotificationSink
     │   │   └── INotificationSink.cs
+    │   ├── Reports/               # lab07: DTO звітів і LINQ-запити
+    │   │   ├── OrderReportLine.cs
+    │   │   ├── GroupSummary.cs
+    │   │   └── ReportService.cs
     │   ├── Services/
     │   │   └── OrderService.cs    # бізнес-операції + event Changed
     │   └── Storage/
@@ -33,8 +37,10 @@ CrossApp/
     │       └── CachingOrderStore.cs   # декоратор (дод. 1)
     └── Cli/
         ├── Cli.csproj
-        ├── Program.cs             # composition root + сценарій
+        ├── Program.cs             # lab07: підкоманди report-* + demo-deferred
         ├── DataPaths.cs           # data/orders.json, data/*.csv, logs/app.log
+        ├── DeferredExecutionDemo.cs # lab07: демо відкладеного виконання
+        ├── Lab6Scenario.cs        # lab06: сценарій подій (підкоманда lab6)
         ├── Notifications/         # lab06 (дод. 1): ConsoleSink, FileSink, CompositeSink
         └── StoreFactory.cs        # фабрика (дод. 3)
 ```
@@ -167,11 +173,12 @@ var service = new OrderService(store);
 Конкретні класи створюються лише в точці входу; `OrderService` не містить слів `File` чи `Console`.
 
 ### Запуск режимів
+Прапорці вибору сховища працюють з будь-якою підкомандою; нижче для прикладу використано `report-top`.
 ```bash
-dotnet run --project src/Cli -f net10.0                  # InMemoryOrderStore, дані зникають після виходу
-dotnet run --project src/Cli -f net10.0 -- --file        # FileOrderStore, накопичення в data/orders.json
-dotnet run --project src/Cli -f net10.0 -- --file --cache  # FileOrderStore у декораторі CachingOrderStore
-dotnet run --project src/Cli -f net10.0 -- --file --factory # вибір сховища через StoreFactory
+dotnet run --project src/Cli -f net10.0 -- report-top                  # InMemoryOrderStore, дані зникають після виходу
+dotnet run --project src/Cli -f net10.0 -- --file report-top           # FileOrderStore, накопичення в data/orders.json
+dotnet run --project src/Cli -f net10.0 -- --file --cache report-top   # FileOrderStore у декораторі CachingOrderStore
+dotnet run --project src/Cli -f net10.0 -- --file --factory report-top # вибір сховища через StoreFactory
 ```
 
 ## Інваріанти доменної моделі (Замовлення)
@@ -241,9 +248,9 @@ service.Changed -= OnOrderChanged;  // другий підписник зали�
 
 ### Запуск
 ```bash
-dotnet run --project src/Cli -f net10.0
-dotnet run --project src/Cli -f net10.0 -- --file
-dotnet run --project src/Cli -f net10.0 -- --file --cache
+dotnet run --project src/Cli -f net10.0 -- lab6
+dotnet run --project src/Cli -f net10.0 -- lab6 --file
+dotnet run --project src/Cli -f net10.0 -- lab6 --file --cache
 ```
 
 ### Очікуваний вивід (фрагмент)
@@ -317,5 +324,142 @@ ImportResult<ProductDto> imported = ProductCsvImporter.Load(csvPath, message =>
 5. Подія оголошена як `event`, а не як публічне поле делегата.
 6. `logs/app.log` формується через `Path.Combine`, каталог створюється кодом.
 
+## Лабораторна 7: звіти через LINQ (Where, Select, GroupBy, топ-N, агрегати)
+
+Домен — **Замовлення**, тому варіант із методички адаптовано так: топ-5 клієнтів за сумою, замовлення дорожче N, групування за статусом, середній чек і максимальне замовлення. Звіти живуть у `Core.Reports`, не знають про `Console` і повертають DTO, а не `Order`. `Program.cs` містить лише вибір підкоманди, виклик `ReportService` і форматування виводу.
+
+### Запити
+
+| Метод | Питання, на яке відповідає | Використані оператори |
+|---|---|---|
+| `TopOrders(source, n)` | Які замовлення мають найбільшу суму? | `OrderByDescending`, `ThenBy`, `Take`, `Select` |
+| `AboveTotal(source, min)` | Які замовлення дорожчі за N? | `Where`, `OrderBy`, `ThenBy`, `Select` |
+| `ByStatus(source)` | Як замовлення розподілені за статусами? | `GroupBy`, `Count`, `Sum`, `Select`, `OrderByDescending` |
+| `TopCustomers(source, n)` | Які клієнти мають найбільшу суму? | `GroupBy`, `Count`, `Sum`, `OrderByDescending`, `ThenBy`, `Take` |
+| `Totals(source)` | Який середній чек, максимум і підсумок? | `ToList`, `Count`, `Sum`, `Average`, `Max` |
+
+Усі звіти приймають `IEnumerable<Order>` і повертають `IReadOnlyList<DTO>`; виняток — агрегатний `Totals`, який повертає іменований кортеж із чотирьох чисел. `TopOrders` і `TopCustomers` мають другий ключ сортування (`OrderId` / `CustomerId`), тому топ-N не залежить від порядку джерела.
+
+### GroupBy з проєкцією
+
+```csharp
+source
+    .GroupBy(o => o.Status)
+    .Select(g => new GroupSummary(
+        g.Key.ToString(),      // ключ групи — статус
+        g.Count(),             // кількість замовлень у групі
+        g.Sum(o => o.Total)))  // сума замовлень групи
+    .OrderByDescending(s => s.Total)
+    .ThenBy(s => s.Key, StringComparer.Ordinal)
+    .ToList();
+```
+
+`GroupSummary` — record `(Key, Count, Total)`, `OrderReportLine` — record `(OrderId, CustomerId, Status, Total)`. Повертати `Order` не можна: контракт звіту не повинен залежати від доменної моделі, а `Order` містить рядки, інваріанти й поведінку, які клієнту звіту не потрібні.
+
+### Підкоманди
+
+```bash
+dotnet run --project src/Cli -f net10.0 -- report-top
+dotnet run --project src/Cli -f net10.0 -- report-top 3
+dotnet run --project src/Cli -f net10.0 -- report-over 3000
+dotnet run --project src/Cli -f net10.0 -- report-groups
+dotnet run --project src/Cli -f net10.0 -- report-clients
+dotnet run --project src/Cli -f net10.0 -- report-sum
+dotnet run --project src/Cli -f net10.0 -- demo-deferred
+```
+
+Прапорці сховища (`--file`, `--cache`, `--factory`) можна додавати до будь-якої підкоманди, наприклад:
+
+```bash
+dotnet run --project src/Cli -f net10.0 -- --file --cache report-groups
+```
+
+### Вивід підкоманд
+
+```text
+> dotnet run --project src/Cli -f net10.0 -- report-top
+TOP-5 ORDERS BY TOTAL
+ID         CUSTOMER     STATUS             TOTAL
+ORD-1011   CUST-006     Confirmed        7500,00
+ORD-1005   CUST-003     Draft            5100,00
+ORD-1013   CUST-001     Confirmed        5000,00
+ORD-1017   CUST-005     Confirmed        4800,00
+ORD-1015   CUST-003     Confirmed        4500,00
+```
+
+```text
+> dotnet run --project src/Cli -f net10.0 -- report-over 3000
+ORDERS OVER 3000,00
+ID         CUSTOMER     STATUS             TOTAL
+ORD-1007   CUST-004     Confirmed        3100,00
+ORD-1009   CUST-005     Draft            3200,00
+ORD-1001   CUST-001     Confirmed        3250,00
+ORD-1015   CUST-003     Confirmed        4500,00
+ORD-1017   CUST-005     Confirmed        4800,00
+ORD-1013   CUST-001     Confirmed        5000,00
+ORD-1005   CUST-003     Draft            5100,00
+ORD-1011   CUST-006     Confirmed        7500,00
+```
+
+```text
+> dotnet run --project src/Cli -f net10.0 -- report-groups
+ORDERS BY STATUS
+STATUS        COUNT        TOTAL
+Confirmed         9     33360,00
+Draft             8     19300,00
+Cancelled         3      2850,00
+```
+
+```text
+> dotnet run --project src/Cli -f net10.0 -- report-clients
+TOP-5 CLIENTS BY TOTAL
+CUSTOMER      COUNT        TOTAL
+CUST-003          3     12300,00
+CUST-006          3     10500,00
+CUST-001          3      9250,00
+CUST-005          3      8800,00
+CUST-004          3      7300,00
+```
+
+```text
+> dotnet run --project src/Cli -f net10.0 -- report-sum
+TOTALS
+ORDERS        TOTAL      AVERAGE          MAX
+    20     55510,00      2775,50      7500,00
+```
+
+```text
+> dotnet run --project src/Cli -f net10.0 -- demo-deferred
+COUNT(before)     16
+COUNT(after)      17
+SNAPSHOT          17
+SOURCE(cleared)    0
+```
+
+### Відкладене виконання
+
+`demo-deferred` бере локальний список, отриманий із `service.All()` через `ToList()`, бо `All()` кожного разу повертає новий знімок. Рядок `source.Where(o => o.Total > minTotal)` лише будує запит: `Where` не перебирає джерело. Перший `Count()` запускає перебирання і повертає **16**. Після додавання `ORD-DEMO-01` той самий об’єкт запиту при повторному `Count()` бачить новий елемент і повертає **17**. Далі `ToList()` один раз матеріалізує результат у `SNAPSHOT` (17 елементів), тому після `source.Clear()` у знімку залишається 17, а в джерелі — 0. `snapshot.Count` читає властивість списку, а `query.Count()` — метод, який щоразу виконує запит.
+
+### Порожнє джерело і стабільність
+
+`report-top`, `report-over`, `report-groups` і `report-clients` на порожньому джерелі повертають порожній список і друкують лише заголовок. `report-sum` повертає `0` замість винятку `Sequence contains no elements`, бо `Totals` перевіряє `list.Count == 0` до виклику `Average`/`Max`. Перевірено запуском з `--file`, коли `data/orders.json` містить `[]`.
+
+Два послідовні запуски `report-top` дають однаковий порядок рядків: основний ключ — `Total`, другий — `OrderId` через `ThenBy(..., StringComparer.Ordinal)`. Без другого ключа порядок замовлень з однаковою сумою залежав би від порядку джерела.
+
+### Самоперевірка
+
+1. `Program.cs` не містить `Where`/`GroupBy`; усі запити — в `ReportService`.
+2. Два запуски `report-top` дають однаковий порядок завдяки `ThenBy(o => o.Id)`.
+3. Порожній набір не спричиняє `InvalidOperationException`.
+4. Кожен рядковий звіт повертає DTO, а не `Order`.
+5. Використовується лише LINQ to Objects; `AsParallel` і `AsQueryable` відсутні.
+6. `SampleData` містить 20 замовлень і 3 статуси, тому `GroupBy` показує три групи.
+
+### Захист
+
+1. `ReportService.ByStatus`: `g.Key` — значення, за яким згруповано (`OrderStatus`), `g.Count()` — кількість елементів групи, `g.Sum(o => o.Total)` — сума замовлень групи.
+2. `report-groups` і `report-sum` показують групування та агрегати; `report-top` двічі — стабільний топ-N.
+3. `demo-deferred` показує `16 -> 17` через повторне виконання відкладеного `Where` і `17` у матеріалізованому знімку.
+4. `OrderReportLine` і `GroupSummary` — DTO: звіт не залежить від зміни `Order`, не передає назовні інваріанти та рядки замовлення.
 
 

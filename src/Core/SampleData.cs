@@ -4,6 +4,7 @@ namespace Core;
 
 public static class SampleData
 {
+    // DoD 8: 20 замовлень і 3 статуси — достатньо для GroupBy, топ-N і агрегатів.
     public static IReadOnlyList<Order> Orders() =>
     [
         Confirmed("ORD-1001", "CUST-001", ("PRD-01", "Цемент М400", 150.0m, 20), ("PRD-02", "Пісок будівельний", 50.0m, 5)),
@@ -23,7 +24,9 @@ public static class SampleData
         Confirmed("ORD-1015", "CUST-003", ("PRD-07", "Бетон товарний", 900.0m, 5)),
         Draft("ORD-1016", "CUST-004", ("PRD-09", "Гіпсокартон 12.5 мм", 120.0m, 20)),
         Confirmed("ORD-1017", "CUST-005", ("PRD-10", "Профіль металевий", 80.0m, 60)),
-        Cancelled("ORD-1018", "CUST-006", ("PRD-11", "Фарба фасадна", 200.0m, 10))
+        Cancelled("ORD-1018", "CUST-006", ("PRD-11", "Фарба фасадна", 200.0m, 10)),
+        Confirmed("ORD-1019", "CUST-007", ("PRD-13", "Штукатурка гіпсова", 180.0m, 12)),
+        Draft("ORD-1020", "CUST-007", ("PRD-14", "Плитка керамічна", 250.0m, 6))
     ];
 
     private static Order Draft(
