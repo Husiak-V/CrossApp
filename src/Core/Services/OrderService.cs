@@ -16,10 +16,6 @@ public sealed class OrderService
         _notificationSink = notificationSink;
     }
 
-    /// <summary>
-    /// Доменна подія: підписники самі вирішують, як обробити зміну.
-    /// Викликається лише після успішного проходження інваріантів.
-    /// </summary>
     public event EventHandler<OrderChangedEventArgs>? Changed;
 
     public Order CreateOrder(string customerId, string? orderId = null)
@@ -77,10 +73,6 @@ public sealed class OrderService
 
     public Order? Find(string id) => _store.GetById(id);
 
-    /// <summary>
-    /// Пошук із критерієм, який задає викликач. Тут потрібен результат,
-    /// тому використовується Func, а не подія.
-    /// </summary>
     public IReadOnlyList<Order> FindAll(Func<Order, bool> predicate)
     {
         ArgumentNullException.ThrowIfNull(predicate);
@@ -93,10 +85,8 @@ public sealed class OrderService
     {
         OrderChangedEventArgs args = new(order.Id, kind, order.Lines.Count, order.Total);
 
-        // Подія призначена для довільної кількості підписників.
         Changed?.Invoke(this, args);
 
-        // Додаткове завдання 1: альтернативний шлях через ручний DI.
         _notificationSink?.Notify(args);
     }
 

@@ -7,12 +7,6 @@ namespace Core.Import;
 public static class ProductCsvImporter
 {
     private const char Separator = ';';
-
-    /// <summary>
-    /// Додаткове завдання 2: <paramref name="onSkipped"/> отримує текст помилки
-    /// для кожного рядка, який не вдалося розібрати. Викликач вирішує,
-    /// виводити його в консоль, писати у файл чи лише рахувати.
-    /// </summary>
     public static ImportResult<ProductDto> Load(string path, Action<string>? onSkipped = null)
     {
         var items = new List<ProductDto>();

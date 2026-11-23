@@ -19,8 +19,7 @@ if (args.Contains("--help") || command is "help" or "-h")
     return 0;
 }
 
-if (command == "lab6")
-    return Lab6Scenario.Run(args);
+
 
 IOrderStore store = useFactory
     ? StoreFactory.Create(args)
@@ -38,7 +37,7 @@ IReadOnlyList<Order> items = service.All();
 
 switch (command)
 {
-    // DoD 5: підкоманди report-* лише викликають ReportService і виводять DTO.
+    // підкоманди report-* лише викликають ReportService і виводять DTO.
     case "report-top":
         int topOrders = IntAfter(args, command, 5);
         PrintOrders($"TOP-{topOrders} ORDERS BY TOTAL", ReportService.TopOrders(items, topOrders));

@@ -4,8 +4,8 @@ namespace Cli;
 
 internal static class DeferredExecutionDemo
 {
-    // DoD 6; питання 2, 4, 5: Where лише описує запит, Count() запускає перебирання,
-    // ToList() фіксує результат. Для відтворення беремо локальний список, бо
+    // Where лише описує запит, Count() запускає перебирання,
+    // ToList() фіксує результат. Для відтворення взято локальний список, бо
     // OrderService.All() кожного разу повертає новий знімок.
     public static void Run(IReadOnlyList<Order> sourceSnapshot, decimal minTotal)
     {
