@@ -34,8 +34,9 @@ public sealed class Order
     public void AddLine(string productId, string name, decimal price, int quantity)
     {
         if (Status != OrderStatus.Draft)
-            throw new InvalidOperationException(
-                $"Замовлення {Id} у статусі {Status}, рядки можна додавати лише в чернетці");
+            throw new DomainException(Status == OrderStatus.Confirmed
+                ? $"Замовлення {Id} уже підтверджено: рядки додавати не можна"
+                : $"Замовлення {Id} скасовано: рядки додавати не можна");
 
         // Перевірки ціни/кількості/назви — всередині OrderLine.Create.
         _lines.Add(OrderLine.Create(productId, name, price, quantity));
@@ -44,7 +45,7 @@ public sealed class Order
     public void Confirm()
     {
         if (_lines.Count == 0)
-            throw new InvalidOperationException($"Не можна підтвердити порожнє замовлення {Id}");
+            throw new DomainException($"Не можна підтвердити порожнє замовлення {Id}");
 
         TransitionTo(OrderStatus.Confirmed);
     }
@@ -65,7 +66,7 @@ public sealed class Order
         };
 
         if (!allowed)
-            throw new InvalidOperationException(
+            throw new DomainException(
                 $"Замовлення {Id}: перехід зі статусу {Status} у {target} заборонено");
 
         Status = target;
@@ -86,7 +87,7 @@ public sealed class Order
         if (Enum.TryParse<OrderStatus>(dto.Status, out OrderStatus status) && status != OrderStatus.Draft)
         {
             if (status == OrderStatus.Confirmed)
-                order.Confirm(); // кине InvalidOperationException для порожнього
+                order.Confirm(); // кине DomainException для порожнього
             else
                 order.TransitionTo(status);
         }

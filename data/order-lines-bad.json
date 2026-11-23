@@ -1,0 +1,4 @@
+[
+  { "productId": "PRD-30", "name": "Коректний рядок", "price": 100.00, "quantity": 1 },
+  { "productId": "PRD-31", "name": "Некоректна кількість", "price": 100.00, "quantity": 0 }
+]

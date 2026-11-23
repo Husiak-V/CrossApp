@@ -69,6 +69,12 @@ switch (command)
         DeferredExecutionDemo.Run(items, DecimalAfter(args, command, 1000m));
         break;
 
+    case "import-lines":
+        return await ImportCommand.RunAsync(service, args, command, stream: false);
+
+    case "import-stream":
+        return await ImportCommand.RunAsync(service, args, command, stream: true);
+
     default:
         PrintCommands();
         return 1;
@@ -120,5 +126,7 @@ static void PrintCommands()
     Console.WriteLine("report-clients [n]");
     Console.WriteLine("report-sum");
     Console.WriteLine("demo-deferred [minTotal]");
+    Console.WriteLine("import-lines <orderId> [path] [--timeout seconds] [--slow]");
+    Console.WriteLine("import-stream <orderId> [path] [--timeout seconds] [--slow]");
     Console.WriteLine("lab6");
 }

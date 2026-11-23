@@ -6,15 +6,25 @@ CrossApp/
 ├── CrossApp.slnx
 ├── README.md
 ├── .gitignore
-├── data/                          # sample.csv, sample.json, mixed.csv (імпортери)
+├── data/                          # sample.csv, sample.json, mixed.csv, order-lines*.json (імпортери)
 ├── logs/                          # lab06: app.log, sinks.log (створюються під час запуску)
+├── tests/
+│   └── Core.Tests/                # lab08: xUnit, посилається лише на Core
+│       ├── Core.Tests.csproj
+│       ├── TestData.cs
+│       ├── TestImporters.cs
+│       ├── OrderServiceTests.cs
+│       ├── ReportServiceTests.cs
+│       └── ImportTests.cs
 └── src/
     ├── Core/
     │   ├── Core.csproj
+    │   ├── DomainException.cs     # lab08: доменні бізнес-помилки
     │   ├── EnvironmentInfo.cs
     │   ├── SampleData.cs          # 20 демонстраційних замовлень
     │   ├── Abstractions/
-    │   │   └── IOrderStore.cs     # контракт сховища
+    │   │   ├── IOrderStore.cs     # контракт сховища
+    │   │   └── IOrderImporter.cs  # lab08: async-контракт імпорту
     │   ├── Domain/
     │   │   ├── Order.cs, OrderLine.cs, OrderStatus.cs
     │   │   └── OrderImport.cs, OrderPolicy.cs
@@ -23,6 +33,8 @@ CrossApp/
     │   │   ├── OrderChangeKind.cs
     │   │   └── OrderChangedEventArgs.cs
     │   ├── Import/
+    │   │   ├── JsonOrderImporter.cs      # lab08: LoadAsync + LoadStreamAsync
+    │   │   └── ImportTimeoutException.cs # lab08 (дод. 2)
     │   ├── Notifications/         # lab06 (дод. 1): порт INotificationSink
     │   │   └── INotificationSink.cs
     │   ├── Reports/               # lab07: DTO звітів і LINQ-запити
@@ -30,16 +42,17 @@ CrossApp/
     │   │   ├── GroupSummary.cs
     │   │   └── ReportService.cs
     │   ├── Services/
-    │   │   └── OrderService.cs    # бізнес-операції + event Changed
+    │   │   └── OrderService.cs    # бізнес-операції, event Changed, ImportAsync
     │   └── Storage/
     │       ├── InMemoryOrderStore.cs
     │       ├── FileOrderStore.cs
     │       └── CachingOrderStore.cs   # декоратор (дод. 1)
     └── Cli/
         ├── Cli.csproj
-        ├── Program.cs             # lab07: підкоманди report-* + demo-deferred
+        ├── Program.cs             # lab07: підкоманди report-*; lab08: import-*
         ├── DataPaths.cs           # data/orders.json, data/*.csv, logs/app.log
         ├── DeferredExecutionDemo.cs # lab07: демо відкладеного виконання
+        ├── ImportCommand.cs       # lab08: Ctrl+C, тайм-аут, обробка винятків
         ├── Lab6Scenario.cs        # lab06: сценарій подій (підкоманда lab6)
         ├── Notifications/         # lab06 (дод. 1): ConsoleSink, FileSink, CompositeSink
         └── StoreFactory.cs        # фабрика (дод. 3)
@@ -184,10 +197,10 @@ dotnet run --project src/Cli -f net10.0 -- --file --factory report-top # виб�
 ## Інваріанти доменної моделі (Замовлення)
 * **Непорожні ідентифікатори:** ідентифікатор замовлення та клієнта не можуть бути порожніми (`ArgumentException`).
 * **Коректність числових значень у рядку:** ціна товару не може бути від'ємною ($\ge 0$), а кількість має бути більшою за нуль ($> 0$) (`ArgumentOutOfRangeException`).
-* **Заборона модифікації не-чернетки:** рядки можна додавати лише в статусі `Draft`; у `Confirmed`/`Cancelled` — `InvalidOperationException`.
-* **Заборона підтвердження порожнього замовлення:** не можна підтвердити замовлення, яке не містить жодного рядка (`InvalidOperationException`).
-* **Допустимі переходи статусів (дод. 3):** `Draft -> Confirmed`, `Draft -> Cancelled`, `Confirmed -> Cancelled`; решта переходів заборонена (`InvalidOperationException`, перевірка через `switch expression`).
-* **Ліміт відкритих замовлень клієнта (дод. 2):** не більше 5 відкритих (`Draft`/`Confirmed`) замовлень на клієнта (`InvalidOperationException` у `OrderPolicy`; правило рівня сервісу, бо потребує доступу до сховища).
+* **Заборона модифікації не-чернетки:** рядки можна додавати лише в статусі `Draft`; у `Confirmed`/`Cancelled` — `DomainException` (lab08).
+* **Заборона підтвердження порожнього замовлення:** не можна підтвердити замовлення, яке не містить жодного рядка (`DomainException`).
+* **Допустимі переходи статусів (дод. 3):** `Draft -> Confirmed`, `Draft -> Cancelled`, `Confirmed -> Cancelled`; решта переходів заборонена (`DomainException`, перевірка через `switch expression`).
+* **Ліміт відкритих замовлень клієнта (дод. 2):** не більше 5 відкритих (`Draft`/`Confirmed`) замовлень на клієнта (`DomainException` у `OrderPolicy`; правило рівня сервісу, бо потребує доступу до сховища).
 * **Імпорт із перевіркою інваріантів (дод. 1):** `OrderImport.ToEntities` бере `ImportResult<OrderLineDto>` і повертає сутності + помилки рядків, що не пройшли `FromDto`.
 
 ## Лабораторна 6: доменні події, делегати Action/Func, лямбди
@@ -461,5 +474,141 @@ SOURCE(cleared)    0
 2. `report-groups` і `report-sum` показують групування та агрегати; `report-top` двічі — стабільний топ-N.
 3. `demo-deferred` показує `16 -> 17` через повторне виконання відкладеного `Where` і `17` у матеріалізованому знімку.
 4. `OrderReportLine` і `GroupSummary` — DTO: звіт не залежить від зміни `Order`, не передає назовні інваріанти та рядки замовлення.
+
+## Лабораторна 8: async/await, скасування, доменні винятки, unit-тести Core
+
+Домен — **Замовлення**, тому варіант методички адаптовано: асинхронний імпорт **рядків замовлення**, `DomainException` для правила «замовлення вже підтверджено», тест на суму після додавання рядків. Додатково реалізовано завдання 1 (потоковий `IAsyncEnumerable`) і 2 (зв'язані токени з тайм-аутом).
+
+### Що стало асинхронним і чому
+
+| Операція | Стан | Причина |
+|---|---|---|
+| `JsonOrderImporter.LoadAsync` | async | читання файлу — реальний I/O; `FileStream(useAsync: true)` + `JsonSerializer.DeserializeAsync`, без `Task.Run` |
+| `JsonOrderImporter.LoadStreamAsync` | async iterator | додаткове завдання 1: `IAsyncEnumerable<OrderLine>` + `await foreach` |
+| `OrderService.ImportAsync` / `ImportStreamAsync` | async | очікує імпортер, передає `ct`, піднімає `LineAdded` на кожен доданий рядок |
+| `InMemoryOrderStore`, `ReportService` | sync | обчислення в пам'яті/ LINQ, без зовнішнього I/O |
+| `FileOrderStore` | sync | лишається синхронним у межах lab08; перехід на async — на етапі EF Core/API (тижні 10–11) |
+
+`await` не створює нового потоку: під час очікування файлового I/O потік вільний для іншої роботи. `Task.Run(() => File.ReadAllText(...))` тут не використовується, бо це лише перенесло б блокування в пул потоків.
+
+### Ключові фрагменти
+
+`LoadAsync` — справжній async-ввід, `ct` у кожному `await` і в циклі (DoD 2, 3; захист 2):
+```csharp
+ct.ThrowIfCancellationRequested();
+await using var stream = new FileStream(
+    path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true);
+List<OrderLineDto> dtos =
+    await JsonSerializer.DeserializeAsync<List<OrderLineDto>>(stream, Options, ct) ?? throw ...;
+for (int i = 0; i < dtos.Count; i++)
+{
+    ct.ThrowIfCancellationRequested();
+    result.Add(ToLine(dtos[i], i));   // ArgumentException -> DomainException
+}
+```
+
+Потоковий імпорт (додаткове завдання 1):
+```csharp
+public async IAsyncEnumerable<OrderLine> LoadStreamAsync(
+    string path, [EnumeratorCancellation] CancellationToken ct = default)
+{
+    await foreach (OrderLineDto? dto in JsonSerializer
+        .DeserializeAsyncEnumerable<OrderLineDto>(stream, Options, ct)
+        .WithCancellation(ct))
+    {
+        ct.ThrowIfCancellationRequested();
+        yield return ToLine(dto, number++);
+    }
+}
+```
+`[EnumeratorCancellation]` дозволяє `await foreach (... .WithCancellation(ct))` передати токен саме в ітератор. `ImportStreamAsync` додає рядок одразу після `yield`, тому скасування посеред потоку зберігає вже додані рядки.
+
+Зв'язані токени (додаткове завдання 2):
+```csharp
+using var timeoutCts = new CancellationTokenSource(timeout);
+using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(userToken, timeoutCts.Token);
+try { return await operation(linkedCts.Token); }
+catch (OperationCanceledException ex)
+    when (timeoutCts.IsCancellationRequested && !userToken.IsCancellationRequested)
+{
+    throw new ImportTimeoutException(timeout, ex);
+}
+```
+Якщо скасувався `timeoutCts`, назовні йде `ImportTimeoutException`; якщо `userToken` — звичайний `OperationCanceledException`. Це дозволяє Cli показати різні повідомлення.
+
+### DomainException vs ArgumentException
+
+* `OrderLine.Create` з `quantity <= 0` → `ArgumentOutOfRangeException`: це некоректний аргумент виклику.
+* `Order.AddLine` у `Confirmed` → `DomainException("... уже підтверджено ...")`: це порушення бізнес-правила, а не форми аргументу.
+* `Order.Confirm` порожнього замовлення та заборонений перехід статусу → `DomainException`.
+* `OrderPolicy.EnsureCanCreateOrder` при перевищенні ліміту → `DomainException`.
+* `JsonOrderImporter` загортає `ArgumentException`/`ArgumentOutOfRangeException` у `DomainException($"Запис {i+1}: ...", ex)`, зберігаючи `InnerException`.
+* `IOException`, `JsonException`, `FileNotFoundException` не маскуються під доменні: Cli обробляє їх окремими `catch`.
+
+### Тести
+
+```bash
+dotnet test
+dotnet test tests/Core.Tests/Core.Tests.csproj -f net10.0
+```
+Проєкт `tests/Core.Tests` посилається лише на `src/Core` і не залежить від `Cli`. У тестах використовується `InMemoryOrderStore`; диск задіяний лише в тесті зі зламаним записом, тимчасовий файл видаляється у `finally`.
+
+| Тест | Що перевіряє | Очікування |
+|---|---|---|
+| `AddLine_WithNegativeQuantity_Throws_AndKeepsState` | інваріант кількості + незмінний стан | `ArgumentOutOfRangeException`, сума та рядки не змінилися |
+| `AddLine_RaisesChangedExactlyOnce` | подія тижня 6 | рівно одна `LineAdded` з новою сумою |
+| `AddLine_WhenOrderConfirmed_ThrowsDomainException` | бізнес-правило | `DomainException`, текст «уже підтверджено» |
+| `AboveTotal_CountsOnlyOrdersAboveThreshold` (`[Theory]`) | звіт на 4 наборах | 4 / 2 / 1 / 0 замовлень |
+| `TopOrders_IsDeterministic` | детермінований топ-N | `ORD-A`, `ORD-C`, `ORD-B` завдяки `ThenBy(Id)` |
+| `Totals_OnEmptySource_ReturnsZeros` | порожнє джерело | нулі без винятку |
+| `ImportAsync_WhenAlreadyCancelled_ThrowsOperationCanceled` | заздалегідь скасований токен | `OperationCanceledException` |
+| `ImportAsync_AddsLines_AndRecalculatesTotal` | варіант «Замовлення» | 2 рядки, сума 40, дві події |
+| `ImportAsync_WithBrokenRecord_ThrowsDomainException` | погані дані | `DomainException` з «Запис 2», стан не змінений |
+| `ImportAsync_WhenOrderConfirmed_ThrowsDomainException` | імпорт у підтверджене замовлення | `DomainException` |
+| `ImportStreamAsync_AddsLinesFromStream` | дод. 1 | 2 рядки, сума 40 |
+| `LoadStreamAsync_ReadsJsonIncrementally` | дод. 1: реальний JSON + `WithCancellation` | `P-1`, `P-2`, `P-3` |
+| `ImportStreamAsync_WhenCancelledMidStream_StopsAfterDeliveredLine` | дод. 1 + скасування | `OperationCanceledException`, у замовленні 1 рядок |
+| `ImportAsync_WhenTimeoutElapses_ThrowsImportTimeout_NotUserCancellation` | дод. 2 | `ImportTimeoutException`, `userCts` не скасований |
+| `ImportAsync_WhenUserCancels_ThrowsOperationCanceled_NotTimeout` | дод. 2 | `OperationCanceledException`, не `ImportTimeoutException` |
+
+Поточний результат: **Passed: 18, Failed: 0**.
+
+### Запуск і перевірка скасування
+
+```bash
+dotnet run --project src/Cli -f net10.0 -- import-lines ORD-1002
+dotnet run --project src/Cli -f net10.0 -- import-stream ORD-1002
+dotnet run --project src/Cli -f net10.0 -- import-lines ORD-1002 data/order-lines-bad.json
+dotnet run --project src/Cli -f net10.0 -- import-lines ORD-1002 --timeout 1 --slow
+dotnet run --project src/Cli -f net10.0 -- import-stream ORD-1002 --timeout 1 --slow
+```
+`--slow` — лише демонстраційний декоратор у Cli (затримка 300 мс на рядок), щоб тайм-аут спрацював на маленькому файлі. Ctrl+C під час імпорту також скасовує операцію через `Console.CancelKeyPress` і `CancellationTokenSource`.
+
+Очікуваний вивід:
+```text
+> ... import-lines ORD-1002
+Імпортовано рядків: 6
+
+> ... import-lines ORD-1002 data/order-lines-bad.json
+Дані відхилено: Запис 2: Кількість у рядку має бути більшою за нуль ...
+
+> ... import-lines ORD-1002 --timeout 1 --slow
+Імпорт перервано тайм-аутом 1 с.
+
+> Ctrl+C
+Імпорт скасовано.
+```
+Порядок `catch` у `Cli/ImportCommand.cs`: `ImportTimeoutException` → `OperationCanceledException` → `DomainException` → `FileNotFoundException`/`JsonException`, тому скасування не виглядає як збій, а доменна помилка не маскує технічну.
+
+### Самоперевірка та DoD
+
+1. `tests/Core.Tests` є в solution, посилається лише на `Core`.
+2. Імпорт читає файл через `FileStream(useAsync: true)` і `DeserializeAsync`; `Task.Run` немає.
+3. `CancellationToken` є в сигнатурах, перевіряється в циклах і передається в кожен `await`.
+4. Cli реагує на Ctrl+C і тайм-аут повідомленням без стектрейсу.
+5. Бізнес-помилки — `DomainException`, аргументи — `ArgumentException`, I/O та JSON — окремі технічні винятки.
+6. 18 тестів зелені; є інваріанти, подія, звіт, скасування, імпорт, тайм-аут.
+7. У розв'язку немає `async void` (крім дозволеного обробника події Ctrl+C), `.Result`, `.Wait()`.
+8. README містить команди тестів і сценарії скасування; зміни закомічено як lab08.
 
 

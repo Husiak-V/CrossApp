@@ -18,7 +18,7 @@ public static class OrderPolicy
             o.Status is OrderStatus.Draft or OrderStatus.Confirmed);
 
         if (openCount >= maxOpen)
-            throw new InvalidOperationException(
+            throw new DomainException(
                 $"Клієнт {customerId.Trim()} уже має {openCount} відкритих замовлень (ліміт {maxOpen}): нове замовлення створити не можна");
     }
 }

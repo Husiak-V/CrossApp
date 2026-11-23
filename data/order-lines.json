@@ -1,0 +1,8 @@
+[
+  { "productId": "PRD-20", "name": "Цвях 100 мм", "price": 2.50, "quantity": 100 },
+  { "productId": "PRD-21", "name": "Шуруп 4х50", "price": 1.20, "quantity": 200 },
+  { "productId": "PRD-22", "name": "Дюбель 8х40", "price": 0.80, "quantity": 300 },
+  { "productId": "PRD-23", "name": "Куток монтажний", "price": 15.00, "quantity": 40 },
+  { "productId": "PRD-24", "name": "Стрічка будівельна", "price": 35.00, "quantity": 10 },
+  { "productId": "PRD-25", "name": "Герметик силіконовий", "price": 120.00, "quantity": 5 }
+]
