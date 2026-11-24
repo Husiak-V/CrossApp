@@ -1,11 +1,40 @@
 ﻿using System.Globalization;
+using System.Reflection;
 using Cli;
 using Core;
 using Core.Abstractions;
+using Core.Configuration;
 using Core.Domain;
 using Core.Reports;
 using Core.Services;
 using Core.Storage;
+using Microsoft.Extensions.Configuration;
+
+// DoD 3, 5; захист 4: джерела додаються від найслабшого до найсильнішого.
+string envName = Environment.GetEnvironmentVariable("CROSSAPP_ENVIRONMENT") ?? "Development";
+IConfigurationRoot config = new ConfigurationBuilder()
+    .SetBasePath(AppContext.BaseDirectory)
+    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
+    .AddJsonFile($"appsettings.{envName}.json", optional: true)
+    .AddUserSecrets(Assembly.GetExecutingAssembly(), optional: true)
+    .AddEnvironmentVariables(prefix: "CROSSAPP_")
+    .AddCommandLine(ConfigArgs(args))
+    .Build();
+
+AppOptions options = config.Get<AppOptions>() ?? new AppOptions();
+
+// Завдання 4: проста CROSSAPP_DATA_PATH перекриває Storage:DataPath з файлу.
+string? legacyDataPath = Environment.GetEnvironmentVariable("CROSSAPP_DATA_PATH");
+var storage = new StorageOptions
+{
+    DataPath = string.IsNullOrWhiteSpace(legacyDataPath) ? options.Storage.DataPath : legacyDataPath,
+    FileName = options.Storage.FileName
+};
+
+// Завдання 7: AppContext.BaseDirectory, а не Environment.CurrentDirectory —
+// запуск з кореня solution і з src/Cli дає той самий файл.
+string dataFile = storage.ResolveFullPath(AppContext.BaseDirectory);
+string? apiKey = config["Integration:ApiKey"];
 
 bool useFile = args.Contains("--file");
 bool useFactory = args.Contains("--factory");
@@ -18,8 +47,6 @@ if (args.Contains("--help") || command is "help" or "-h")
     PrintCommands();
     return 0;
 }
-
-
 
 IOrderStore store = useFactory
     ? StoreFactory.Create(args)
@@ -75,12 +102,24 @@ switch (command)
     case "import-stream":
         return await ImportCommand.RunAsync(service, args, command, stream: true);
 
+    // Лабораторна 9: експорт/імпорт колекції, перегляд замовлень та діагностика конфігурації.
+    case "export":
+    case "import":
+    case "orders":
+    case "config":
+        return Lab9Command.Run(command, args, options, storage, dataFile, apiKey);
+
     default:
         PrintCommands();
         return 1;
 }
 
 return 0;
+
+// AddCommandLine не повинен бачити підкоманди та прапорці на кшталт --file;
+// приймаємо лише документовану форму --Ключ=Значення.
+static string[] ConfigArgs(string[] args) =>
+    args.Where(a => a.StartsWith("--", StringComparison.Ordinal) && a.Contains('=')).ToArray();
 
 static int IntAfter(string[] args, string command, int fallback)
 {
@@ -128,5 +167,9 @@ static void PrintCommands()
     Console.WriteLine("demo-deferred [minTotal]");
     Console.WriteLine("import-lines <orderId> [path] [--timeout seconds] [--slow]");
     Console.WriteLine("import-stream <orderId> [path] [--timeout seconds] [--slow]");
+    Console.WriteLine("export [path]");
+    Console.WriteLine("import [path]");
+    Console.WriteLine("orders");
+    Console.WriteLine("config");
     Console.WriteLine("lab6");
 }

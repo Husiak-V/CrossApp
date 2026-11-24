@@ -1,8 +1,10 @@
 using Core.Abstractions;
 using Core.Domain;
+using Core.Dto;
 using Core.Events;
 using Core.Import;
 using Core.Notifications;
+using Core.Storage;
 
 namespace Core.Services;
 
@@ -73,6 +75,43 @@ public sealed class OrderService
     public IReadOnlyList<Order> All() => _store.List();
 
     public Order? Find(string id) => _store.GetById(id);
+
+    // Лабораторна 9 (DoD 1): імпорт замінює всю колекцію, тому потрібен ReplaceAll.
+    public void ReplaceAll(IEnumerable<Order> orders)
+    {
+        ArgumentNullException.ThrowIfNull(orders);
+        _store.ReplaceAll(orders);
+    }
+
+    // DoD 1: експорт усієї колекції; запис атомарний, як і у FileOrderStore.
+    public int ExportJson(string path)
+    {
+        IReadOnlyList<Order> items = _store.List();
+        OrderJson.WriteAtomic(path, items.Select(order => order.ToDto()));
+        return items.Count;
+    }
+
+    // DoD 1: спочатку валідуємо всі записи, лише потім замінюємо колекцію.
+    public int ImportJson(string path)
+    {
+        List<OrderDto> dtos = OrderJson.Read(path);
+        var orders = new List<Order>(dtos.Count);
+
+        for (int i = 0; i < dtos.Count; i++)
+        {
+            try
+            {
+                orders.Add(Order.FromDto(dtos[i]));
+            }
+            catch (Exception ex) when (ex is ArgumentException or DomainException)
+            {
+                throw new InvalidDataException($"Запис {i + 1}: {ex.Message}", ex);
+            }
+        }
+
+        _store.ReplaceAll(orders);
+        return orders.Count;
+    }
 
     public IReadOnlyList<Order> FindAll(Func<Order, bool> predicate)
     {

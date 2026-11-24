@@ -49,4 +49,17 @@ public sealed class CachingOrderStore(IOrderStore inner) : IOrderStore
         if (removed) _cache.Remove(id);
         return removed;
     }
+
+    // Лабораторна 9 (DoD 1): спочатку замінюємо джерело, потім перебудовуємо кеш.
+    public void ReplaceAll(IEnumerable<Order> items)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+
+        _inner.ReplaceAll(items);
+        _cache.Clear();
+        foreach (Order order in _inner.List())
+            _cache[order.Id] = order;
+
+        _loaded = true;
+    }
 }

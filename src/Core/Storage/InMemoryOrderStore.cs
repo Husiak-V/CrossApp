@@ -27,4 +27,17 @@ public sealed class InMemoryOrderStore(IEnumerable<Order>? seed = null) : IOrder
     }
 
     public bool Remove(string id) => _items.Remove(id);
+
+    // Лабораторна 9 (DoD 1): імпорт замінює колекцію цілком.
+    public void ReplaceAll(IEnumerable<Order> items)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+
+        _items.Clear();
+        foreach (Order item in items)
+        {
+            ArgumentNullException.ThrowIfNull(item);
+            _items[item.Id] = item;
+        }
+    }
 }

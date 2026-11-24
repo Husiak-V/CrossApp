@@ -9,4 +9,5 @@ public interface IOrderStore
     void Add(Order item);
     void Update(Order item);
     bool Remove(string id);
+    void ReplaceAll(IEnumerable<Order> items);
 }

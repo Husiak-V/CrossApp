@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Core.Abstractions;
 using Core.Domain;
 using Core.Dto;
@@ -7,7 +6,6 @@ namespace Core.Storage;
 
 public sealed class FileOrderStore(string path) : IOrderStore
 {
-    private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
     private readonly Dictionary<string, Order> _cache = new(StringComparer.OrdinalIgnoreCase);
     private readonly string _path = Path.GetFullPath(path);
     private bool _loaded;
@@ -15,25 +13,25 @@ public sealed class FileOrderStore(string path) : IOrderStore
     private void EnsureLoaded()
     {
         if (_loaded) return;
-        if (File.Exists(_path))
+
+        if (!File.Exists(_path))
         {
-            List<OrderDto> dtos =
-                JsonSerializer.Deserialize<List<OrderDto>>(File.ReadAllText(_path), Options) ?? [];
-            foreach (OrderDto dto in dtos)
-            {
-                Order order = Order.FromDto(dto);
-                _cache[order.Id] = order;
-            }
+            _loaded = true;
+            return;
         }
+
+        foreach (OrderDto dto in OrderJson.Read(_path))
+        {
+            Order order = Order.FromDto(dto); // повторно перевіряє інваріанти
+            _cache[order.Id] = order;
+        }
+
         _loaded = true;
     }
 
-    private void Flush()
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        File.WriteAllText(_path,
-            JsonSerializer.Serialize(_cache.Values.Select(o => o.ToDto()).ToList(), Options));
-    }
+    // Захист 9: атомарний запис — спочатку .tmp, потім File.Move.
+    private void Flush() =>
+        OrderJson.WriteAtomic(_path, _cache.Values.Select(order => order.ToDto()));
 
     public IReadOnlyList<Order> List()
     {
@@ -71,5 +69,22 @@ public sealed class FileOrderStore(string path) : IOrderStore
         if (!_cache.Remove(id)) return false;
         Flush();
         return true;
+    }
+
+    // Імпорт замінює колекцію цілком; старий файл не читається,
+    // тому пошкоджений orders.json можна відновити командою import.
+    public void ReplaceAll(IEnumerable<Order> items)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+
+        _cache.Clear();
+        foreach (Order item in items)
+        {
+            ArgumentNullException.ThrowIfNull(item);
+            _cache[item.Id] = item;
+        }
+
+        _loaded = true;
+        Flush();
     }
 }

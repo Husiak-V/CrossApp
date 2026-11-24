@@ -1,0 +1,27 @@
+[
+  {
+    "id": "ORD-9001",
+    "customerId": "CUST-101",
+    "status": "Draft",
+    "lines": [
+      { "productId": "PRD-01", "name": "Цемент М400", "price": 150.0, "quantity": 10 },
+      { "productId": "PRD-02", "name": "Пісок будівельний", "price": 50.0, "quantity": 4 }
+    ]
+  },
+  {
+    "id": "ORD-9002",
+    "customerId": "CUST-102",
+    "status": "Confirmed",
+    "lines": [
+      { "productId": "PRD-04", "name": "Кабель UTP cat6", "price": 25.0, "quantity": 20 }
+    ]
+  },
+  {
+    "id": "ORD-9003",
+    "customerId": "CUST-103",
+    "status": "Cancelled",
+    "lines": [
+      { "productId": "PRD-11", "name": "Фарба фасадна", "price": 200.0, "quantity": 2 }
+    ]
+  }
+]

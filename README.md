@@ -6,16 +6,17 @@ CrossApp/
 ├── CrossApp.slnx
 ├── README.md
 ├── .gitignore
-├── data/                          # sample.csv, sample.json, mixed.csv, order-lines*.json (імпортери)
+├── data/                          # sample.csv, sample.json, mixed.csv, order-lines*.json, orders-sample.json (lab09)
 ├── logs/                          # lab06: app.log, sinks.log (створюються під час запуску)
 ├── tests/
-│   └── Core.Tests/                # lab08: xUnit, посилається лише на Core
+│   └── Core.Tests/                # lab08: xUnit, посилається лише на Core; lab09: Lab9Tests.cs
 │       ├── Core.Tests.csproj
 │       ├── TestData.cs
 │       ├── TestImporters.cs
 │       ├── OrderServiceTests.cs
 │       ├── ReportServiceTests.cs
-│       └── ImportTests.cs
+│       ├── ImportTests.cs
+│       └── Lab9Tests.cs           # lab09: шляхи, JSON, export/import
 └── src/
     ├── Core/
     │   ├── Core.csproj
@@ -23,8 +24,10 @@ CrossApp/
     │   ├── EnvironmentInfo.cs
     │   ├── SampleData.cs          # 20 демонстраційних замовлень
     │   ├── Abstractions/
-    │   │   ├── IOrderStore.cs     # контракт сховища
+    │   │   ├── IOrderStore.cs     # контракт сховища; lab09: ReplaceAll
     │   │   └── IOrderImporter.cs  # lab08: async-контракт імпорту
+    │   ├── Configuration/         # lab09
+    │   │   └── AppOptions.cs      # Storage, Orders, Logging, EnvironmentName
     │   ├── Domain/
     │   │   ├── Order.cs, OrderLine.cs, OrderStatus.cs
     │   │   └── OrderImport.cs, OrderPolicy.cs
@@ -42,17 +45,22 @@ CrossApp/
     │   │   ├── GroupSummary.cs
     │   │   └── ReportService.cs
     │   ├── Services/
-    │   │   └── OrderService.cs    # бізнес-операції, event Changed, ImportAsync
+    │   │   └── OrderService.cs    # бізнес-операції, event Changed, ImportAsync, ExportJson/ImportJson
     │   └── Storage/
     │       ├── InMemoryOrderStore.cs
-    │       ├── FileOrderStore.cs
-    │       └── CachingOrderStore.cs   # декоратор (дод. 1)
+    │       ├── FileOrderStore.cs  # lab09: атомарний JSON і ReplaceAll
+    │       ├── CachingOrderStore.cs   # декоратор (дод. 1)
+    │       └── OrderJson.cs       # lab09: camelCase, кирилиця, .tmp + File.Move
     └── Cli/
-        ├── Cli.csproj
-        ├── Program.cs             # lab07: підкоманди report-*; lab08: import-*
+        ├── Cli.csproj             # lab09: config-пакети, UserSecretsId, копіювання appsettings
+        ├── appsettings.json       # lab09: базові ключі (без secrets)
+        ├── appsettings.Development.json
+        ├── appsettings.Production.json
+        ├── Program.cs             # lab07: report-*; lab08: import-*; lab09: стек конфігурації
         ├── DataPaths.cs           # data/orders.json, data/*.csv, logs/app.log
         ├── DeferredExecutionDemo.cs # lab07: демо відкладеного виконання
         ├── ImportCommand.cs       # lab08: Ctrl+C, тайм-аут, обробка винятків
+        ├── Lab9Command.cs         # lab09: export/import/orders/config
         ├── Lab6Scenario.cs        # lab06: сценарій подій (підкоманда lab6)
         ├── Notifications/         # lab06 (дод. 1): ConsoleSink, FileSink, CompositeSink
         └── StoreFactory.cs        # фабрика (дод. 3)
@@ -571,7 +579,7 @@ dotnet test tests/Core.Tests/Core.Tests.csproj -f net10.0
 | `ImportAsync_WhenTimeoutElapses_ThrowsImportTimeout_NotUserCancellation` | дод. 2 | `ImportTimeoutException`, `userCts` не скасований |
 | `ImportAsync_WhenUserCancels_ThrowsOperationCanceled_NotTimeout` | дод. 2 | `OperationCanceledException`, не `ImportTimeoutException` |
 
-Поточний результат: **Passed: 18, Failed: 0**.
+Поточний результат після лабораторної 9: **Passed: 25, Failed: 0** (18 тестів lab08 + 7 тестів lab09).
 
 ### Запуск і перевірка скасування
 
@@ -607,8 +615,222 @@ dotnet run --project src/Cli -f net10.0 -- import-stream ORD-1002 --timeout 1 --
 3. `CancellationToken` є в сигнатурах, перевіряється в циклах і передається в кожен `await`.
 4. Cli реагує на Ctrl+C і тайм-аут повідомленням без стектрейсу.
 5. Бізнес-помилки — `DomainException`, аргументи — `ArgumentException`, I/O та JSON — окремі технічні винятки.
-6. 18 тестів зелені; є інваріанти, подія, звіт, скасування, імпорт, тайм-аут.
+6. 25 тестів зелені (18 з lab08 + 7 з lab09); є інваріанти, подія, звіт, скасування, імпорт, тайм-аут.
 7. У розв'язку немає `async void` (крім дозволеного обробника події Ctrl+C), `.Result`, `.Wait()`.
 8. README містить команди тестів і сценарії скасування; зміни закомічено як lab08.
+
+## Лабораторна 9: шляхи, JSON, конфігурація, Secrets
+
+Домен — **Замовлення**. Окремий вертикальний зріз не додавався: `export`/`import` працюють із наявною колекцією `Order`, а ключ варіанта — `Orders:Currency` (валюта в CLI-виводі). Контракт `IOrderStore` розширено методом `ReplaceAll`, щоб імпорт замінював колекцію цілком; це реалізовано в `InMemoryOrderStore`, `FileOrderStore` і `CachingOrderStore`.
+
+### Що зроблено
+
+| Вимога | Реалізація |
+|---|---|
+| Прибрати літерали шляхів | `StorageOptions.ResolveFullPath` + `Path.Combine`/`Path.GetFullPath`; у `src` немає `C:\`, `/home/` і ручного `"\\"` |
+| appsettings | `src/Cli/appsettings.json`, `.Development.json`, `.Production.json` копіюються в output/publish |
+| AppOptions | `Core.Configuration.AppOptions` + `config.Get<AppOptions>()` |
+| CROSSAPP_ та CROSSAPP_DATA_PATH | `AddEnvironmentVariables(prefix: "CROSSAPP_")` + окреме читання `CROSSAPP_DATA_PATH` |
+| JSON export/import | `OrderService.ExportJson`/`ImportJson`, `OrderJson`, `FileOrderStore.ReplaceAll` |
+| Secret | `config["Integration:ApiKey"]`; друкується лише «присутній, довжина N» |
+| Переносимість | базовий каталог — `AppContext.BaseDirectory`, тому cwd не впливає |
+| README | профілі, таблиця ключів, PowerShell/bash, user-secrets |
+
+### Ключі конфігурації
+
+| Ключ | appsettings.json | Призначення |
+|---|---|---|
+| `EnvironmentName` | `Development` | ім'я профілю в діагностиці |
+| `Logging:MinimumLevel` | `Information` | рівень логування (Development — `Debug`, Production — `Warning`) |
+| `Storage:DataPath` | `data` | каталог даних відносно `AppContext.BaseDirectory` |
+| `Storage:FileName` | `orders.json` | файл колекції замовлень |
+| `Orders:Currency` | `грн` | валюта в командах `orders` і `config` |
+| `Integration:ApiKey` | **немає** | secret: user-secrets або `CROSSAPP_Integration__ApiKey` |
+
+### Порядок джерел
+
+```text
+appsettings.json
+  → appsettings.{CROSSAPP_ENVIRONMENT}.json
+  → user-secrets
+  → змінні середовища CROSSAPP_
+  → аргументи командного рядка (--Ключ=Значення)
+```
+
+Пізніше джерело перекриває попереднє. `CROSSAPP_DATA_PATH` обробляється окремо після binder і перекриває саме `Storage:DataPath`.
+
+### Профілі
+
+| Профіль | Logging:MinimumLevel | Storage:DataPath |
+|---|---|---|
+| Development | `Debug` | `data` → `src/Cli/bin/Debug/net10.0/data/orders.json` |
+| Production | `Warning` | `data/prod` → `.../data/prod/orders.json` |
+
+Перемикання: `CROSSAPP_ENVIRONMENT=Production`.
+
+### Команди
+
+```bash
+dotnet run --project src/Cli -f net10.0 -- export
+dotnet run --project src/Cli -f net10.0 -- import
+dotnet run --project src/Cli -f net10.0 -- orders
+dotnet run --project src/Cli -f net10.0 -- config
+```
+
+`export` без аргументу пише у файл із конфігурації; якщо колекція порожня, спочатку додає 20 демонстраційних замовлень із `SampleData`. `import` без аргументу читає `data/orders-sample.json`. Явний шлях можна передати першим аргументом: `export data/orders-export.json`, `import data/orders-export.json`.
+
+Команди лабораторної 9 працюють саме з `Storage:FileName`, а не з legacy-шляхом `--file` часів лабораторної 5. Прапорець `--file` і далі використовує `data/orders.json` кореня репозиторію для звітів та імпорту рядків.
+
+Очікуваний вивід:
+
+```text
+> dotnet run --project src/Cli -f net10.0 -- export
+Файл даних : C:\...\src\Cli\bin\Debug\net10.0\data\orders.json
+ApiKey: присутній, довжина 13
+Експортовано 20 замовлень.
+
+> dotnet run --project src/Cli -f net10.0 -- import
+Файл даних : C:\...\src\Cli\bin\Debug\net10.0\data\orders.json
+ApiKey: присутній, довжина 13
+Імпортовано 3 замовлень.
+
+> dotnet run --project src/Cli -f net10.0 -- orders
+ID         CUSTOMER     STATUS             TOTAL
+ORD-9001   CUST-101     Draft            1700,00 грн
+ORD-9002   CUST-102     Confirmed         500,00 грн
+ORD-9003   CUST-103     Cancelled         400,00 грн
+```
+
+`data/orders-sample.json`:
+
+```json
+[
+  {
+    "id": "ORD-9001",
+    "customerId": "CUST-101",
+    "status": "Draft",
+    "lines": [
+      { "productId": "PRD-01", "name": "Цемент М400", "price": 150.0, "quantity": 10 }
+    ]
+  }
+]
+```
+
+### Перевизначення шляху
+
+PowerShell:
+
+```powershell
+$env:CROSSAPP_DATA_PATH = "C:\temp\crossapp-data"
+$env:CROSSAPP_Storage__DataPath = "C:\temp\crossapp-data"
+$env:CROSSAPP_Integration__ApiKey = "from-env"
+$env:CROSSAPP_ENVIRONMENT = "Production"
+dotnet run --project src/Cli -f net10.0 -- export
+```
+
+bash:
+
+```bash
+export CROSSAPP_DATA_PATH=/tmp/crossapp-data
+export CROSSAPP_Storage__DataPath=/tmp/crossapp-data
+export CROSSAPP_Integration__ApiKey=from-env
+CROSSAPP_ENVIRONMENT=Production dotnet run --project src/Cli -f net10.0 -- export
+```
+
+Командний рядок (лише форма з `=`):
+
+```bash
+dotnet run --project src/Cli -f net10.0 -- export "--Storage:DataPath=C:\temp\crossapp-data"
+```
+
+`Storage:DataPath` у змінній середовища записується як `CROSSAPP_Storage__DataPath`: префікс `CROSSAPP_`, двокрапка → подвійне підкреслення.
+
+### Secrets
+
+```bash
+dotnet user-secrets init --project src/Cli
+dotnet user-secrets set "Integration:ApiKey" "<your-local-key>" --project src/Cli
+dotnet user-secrets list --project src/Cli
+```
+
+`UserSecretsId` записано в `src/Cli/Cli.csproj` і комітиться; сам `secrets.json` лежить поза репозиторієм:
+
+* Windows: `%APPDATA%\Microsoft\UserSecrets\<UserSecretsId>\secrets.json`
+* Linux/macOS: `~/.microsoft/usersecrets/<UserSecretsId>/secrets.json`
+
+У консолі друкується лише факт наявності та довжина. `Integration:ApiKey` немає в `appsettings.json`; `git grep` за значенням секрету порожній. Для CI/продакшену використовується `CROSSAPP_Integration__ApiKey`, а не user-secrets.
+
+### Чому Path.Combine, а не конкатенація
+
+```csharp
+string root = Path.IsPathRooted(DataPath) ? DataPath : Path.Combine(baseDir, DataPath);
+Directory.CreateDirectory(root);
+return Path.GetFullPath(Path.Combine(root, FileName));
+```
+
+`Path.Combine` ставить `\` у Windows і `/` у Linux/macOS, не дублює роздільники та коректно працює з абсолютним `DataPath`. `Path.GetFullPath` робить шлях абсолютним і нормалізує `..`. База — `AppContext.BaseDirectory` (каталог застосунку), а не `Environment.CurrentDirectory`, тому запуск з кореня solution і з `src/Cli` дає той самий файл:
+
+```text
+C:\...\src\Cli\bin\Debug\net10.0\data\orders.json
+```
+
+`Environment.CurrentDirectory` залежить від того, звідки запущено процес. `SpecialFolder.LocalApplicationData` доречний для користувацьких даних/кешу, які не повинні лежати поруч із бінарниками, а не для файлу колекції в цій роботі.
+
+### JSON: camelCase, кирилиця, атомарний запис
+
+```csharp
+private static readonly JsonSerializerOptions Options = new()
+{
+    WriteIndented = true,
+    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    PropertyNameCaseInsensitive = true,
+    Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+};
+```
+
+* `CamelCase` під час серіалізації дає `id`, `customerId`, `status`, `lines`, `productId`, `name`, `price`, `quantity`; під час десеріалізації — зіставляє їх із властивостями `Id`, `CustomerId`, ... `PropertyNameCaseInsensitive` додатково приймає PascalCase.
+* `UnsafeRelaxedJsonEscaping` не перетворює `Ц` на `\u0426`. Для файлу даних це безпечно; для JSON, що вбудовується в HTML, потрібен звичайний encoder.
+* Запис: `File.WriteAllText(path + ".tmp", ...)`, потім `File.Move(tmp, path, overwrite: true)`. Читач бачить або старий, або новий повний файл, а не напівзаписаний.
+* Зіпсований JSON перетворюється на `InvalidDataException` з назвою файлу; `Cli` друкує «Файл пошкоджено: ...» без stack trace. `import` валідує всі записи до `ReplaceAll`, тому часткового імпорту немає.
+
+### Тести лабораторної 9
+
+| Тест | Що перевіряє |
+|---|---|
+| `StorageOptions_ResolveFullPath_IsAbsolute_AndCreatesDirectory` | абсолютний шлях від базового каталогу + створення `data/` |
+| `FileOrderStore_Add_WritesReadableJsonAtomically` | camelCase, кирилиця без `\uXXXX`, відсутність `.tmp` |
+| `FileOrderStore_LoadsExistingJson_AndChecksInvariants` | читання PascalCase і повторна перевірка інваріантів |
+| `FileOrderStore_WithBrokenJson_ThrowsInvalidDataException` | зрозуміле повідомлення для зіпсованого JSON |
+| `OrderService_ExportImport_RoundTrips` | повний цикл export → import зі статусами й рядками |
+| `OrderService_Import_WithBrokenRecord_KeepsExistingCollection` | некоректний запис не замінює колекцію частково |
+| `OrderService_Import_WithEmptyConfirmedOrder_ThrowsInvalidDataException` | доменний інваріант під час імпорту |
+
+```bash
+dotnet build CrossApp.slnx
+dotnet test
+```
+
+Поточний результат: **Passed: 25, Failed: 0**.
+
+### Самоперевірка та DoD
+
+1. `export`/`import` працюють; `OrderService_ExportImport_RoundTrips` перевіряє повний цикл.
+2. У `src` немає `C:\`, `/home/` і ручного `\`; шляхи будуються через `Path.Combine`.
+3. `appsettings.json` є в репозиторії, без `Integration:ApiKey`.
+4. `CROSSAPP_DATA_PATH` перекриває `Storage:DataPath` (перевірено експортом у тимчасовий каталог).
+5. Secret читається з user-secrets або `CROSSAPP_Integration__ApiKey`; запуск з довільного cwd дає той самий файл.
+6. `dotnet build` і `dotnet test` зелені (25 тестів); зміни закомічено як `lab09`.
+
+### Захист: короткі відповіді
+
+1. `CurrentDirectory` — звідки запущено процес, може бути будь-яким; `BaseDirectory` — каталог збірки/застосунку, стабільний для пошуку `appsettings.json` і даних.
+2. `Path.Combine` враховує роздільник ОС і не створює подвійних роздільників; ручне склеювання з `"\"` ламається на Linux/macOS.
+3. `LocalApplicationData` — для локальних даних користувача (кеш, налаштування), які не мають бути в каталозі застосунку або репозиторії.
+4. `appsettings.json` → профіль → user-secrets → `CROSSAPP_` env → командний рядок; кожне наступне перекриває попереднє.
+5. `CROSSAPP_Storage__DataPath` (префікс + `__` замість `:`).
+6. Windows `%APPDATA%\Microsoft\UserSecrets\<id>\secrets.json`, Linux/macOS `~/.microsoft/usersecrets/<id>/secrets.json`; user-secrets — для локальної розробки, у продакшені — env або сховище секретів.
+7. `CamelCase` задає відображення імен під час серіалізації/десеріалізації; разом із `PropertyNameCaseInsensitive` читаються обидва варіанти регістру.
+8. `System.Text.Json` за замовчуванням екранує не-ASCII; `UnsafeRelaxedJsonEscaping` лишає кирилицю читабельною.
+9. `.tmp` + `File.Move` дає атомарну заміну: немає моменту, коли файл частково записаний.
 
 

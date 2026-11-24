@@ -483,3 +483,6 @@ $RECYCLE.BIN/
 
 # Runtime data (lab 5 file store)
 /data/orders.json
+# Runtime data (lab 9): Production profile та явний експорт
+/data/prod/
+/data/orders-export.json
